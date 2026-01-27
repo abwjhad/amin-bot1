@@ -4,152 +4,180 @@ import requests
 import time
 import os
 import logging
+import threading
 from telebot import types
 from datetime import datetime
 
-# ================== الإعدادات ==================
+# --- 1. إعدادات البوت والأدمن ---
 TOKEN = "6396872015:AAHQCVV0NKKAUx0jw4Un3e6YcuUGU19jd1M"
 GEMINI_KEY = "AIzaSyABXhnU1tRmhuuL9FyRAtY-qGRdtQr-xiE"
-ADMIN_ID = 5509592307
+ADMIN_ID = 5509592307  # الآيدي الخاص بك
 MAIN_CHANNEL = "@Yemen_International_Library"
-
 LIB_NAME = "مكتبة المليار كتاب 📚"
 LIB_LINK = f"https://t.me/{MAIN_CHANNEL.replace('@','')}"
 
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+# الفاصل الزمني بين كل منشور وآخر (بالثواني) لتجنب الحظر
+POST_DELAY = 45 
 
-# ================== قاعدة البيانات ==================
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+bot = telebot.TeleBot(TOKEN)
+
+# --- 2. قاعدة البيانات (طابور النشر) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(BASE_DIR, "billion_lib.db")
+db_path = os.path.join(BASE_DIR, 'billion_lib.db')
 
 def init_db():
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cur = conn.cursor()
-    # تعديل جدول الملفات ليعتمد على البصمة الوهمية (اسم + حجم)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS files (
-        file_id TEXT PRIMARY KEY,
-        name TEXT,
-        size TEXT,
-        date_added TEXT
-    )
-    """)
-    cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-    cur.execute("INSERT OR IGNORE INTO settings VALUES ('maintenance','OFF')")
+    # جدول الملفات (تم إضافة status للطابور)
+    cur.execute('''CREATE TABLE IF NOT EXISTS files 
+                   (hash TEXT PRIMARY KEY, name TEXT, file_id TEXT, msg_id INTEGER, chat_id INTEGER, status TEXT, date_added TEXT)''')
     conn.commit()
     return conn
 
-db = init_db()
+db_conn = init_db()
 
-# ================== أدوات ذكية (بدون تحميل الملف) ==================
-
-def get_ai_details(book_title):
-    """جلب التصنيف والوصف والدرر من Gemini"""
+# --- 3. المخ (الذكاء الاصطناعي - تصنيف دقيق) ---
+def get_ai_analysis(book_name):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
-    prompt = (
-        f"أنت أمين مكتبة خبير. الكتاب هو: '{book_title}'.\n"
-        "أعطني الرد بالتنسيق التالي فقط:\n"
-        "🏷️ **التصنيف:** [نوع الكتاب]\n"
-        "📝 **الوصف:** [وصف بليغ سطرين]\n"
-        "💎 **درر:** [مقولة عالمية أو يمنية مسجوعة عن العلم]"
-    )
-    try:
-        r = requests.post(url, json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=15).json()
-        return r["candidates"][0]["content"]["parts"][0]["text"]
-    except:
-        return "🏷️ **التصنيف:** عام\n📝 **الوصف:** كتاب قيم ومفيد.\n💎 **درر:** العلم يرفع بيوتاً لا عماد لها."
-
-# ================== معالجة الملفات (نظام البصمة السريع) ==================
-
-@bot.message_handler(content_types=["document", "video", "audio"])
-def handle_files(msg):
-    cur = db.cursor()
-    cur.execute("SELECT value FROM settings WHERE key='maintenance'")
-    if cur.fetchone()[0] == "ON" and msg.from_user.id != ADMIN_ID:
-        return bot.reply_to(msg, "⚠️ المكتبة في وضع الصيانة حالياً.")
-
-    file = msg.document or msg.video or msg.audio
-    file_name = getattr(file, "file_name", "بدون اسم")
     
-    # تنظيف الاسم من الامتدادات
-    clean_name = file_name.replace(".pdf","").replace(".epub","").replace(".mp4","").replace("_"," ").strip()
-    size_mb = f"{file.file_size / (1024*1024):.2f} MB"
-
-    # [💡 التعديل الجوهري] منع التكرار باستخدام (اسم الكتاب + حجمه)
-    # هذا يمنع التكرار دون الحاجة لتحميل الملف
-    file_signature = f"{clean_name}_{file.file_size}"
-
-    cur.execute("SELECT date_added FROM files WHERE file_id=?", (file_signature,))
-    exists = cur.fetchone()
-
-    if exists:
-        if msg.from_user.id == ADMIN_ID:
-            bot.reply_to(msg, f"⚠️ هذا الكتاب موجود مسبقاً في القناة منذ {exists[0]}")
-        return
-
-    # جلب البيانات من الذكاء الاصطناعي بناءً على الاسم فقط
-    status_msg = bot.reply_to(msg, "⏳ جاري استخراج الدرر والأرشفة...")
-    ai_content = get_ai_details(clean_name)
-
-    # تنسيق المنشور
-    caption_text = (
-        f"📖 **اسم الكتاب:** {clean_name}\n"
-        f"{ai_content}\n\n"
-        f"💾 **حجم الملف:** {size_mb}\n\n"
-        f"🏛️ **[{LIB_NAME}]({LIB_LINK})**\n"
-        f"━━━━━━━━━━━━\n"
-        f"📢 ساهم في نشر العلم والمعرفة"
+    # هندسة الأوامر للحصول على تصنيف دقيق
+    prompt = (
+        f"أنت خبير في تصنيف الكتب في مكتبة عالمية. الكتاب بعنوان: '{book_name}'.\n"
+        f"قم بتحليله واستخرج البيانات التالية بدقة متناهية:\n"
+        f"1. العنوان الرسمي: (اكتب العنوان بشكل صحيح بدون زيادات).\n"
+        f"2. التصنيف: اختر واحداً فقط من (سياسة، دين، علوم، ثقافة، توعية، رواية، تاريخ، فلسفة، تقنية).\n"
+        f"3. الوصف: وصف عميق ومختصر جداً في سطرين.\n"
+        f"4. درر: اقتباس أو حكمة بليغة تناسب موضوع الكتاب تماماً (وليس حكمة عامة).\n"
+        f"نسق الإجابة هكذا تماماً:\n"
+        f"العنوان: [النص]\nالتصنيف: [النص]\nالوصف: [النص]\nدرر: [النص]"
     )
-
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("انضم للمكتبة 📚", url=LIB_LINK))
-
+    
     try:
-        # النشر في القناة
-        bot.copy_message(
-            MAIN_CHANNEL,
-            msg.chat.id,
-            msg.message_id,
-            caption=caption_text,
-            reply_markup=kb,
-            parse_mode="Markdown"
-        )
+        res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20).json()
+        return res['candidates'][0]['content']['parts'][0]['text']
+    except:
+        return f"العنوان: {book_name}\nالتصنيف: عام\nالوصف: كتاب مميز ضمن مكتبة المليار.\nدرر: خير جليس في الزمان كتاب."
 
-        # حفظ في قاعدة البيانات
-        cur.execute("INSERT INTO files VALUES (?,?,?,?)", 
-                    (file_signature, clean_name, size_mb, datetime.now().strftime("%Y-%m-%d")))
-        db.commit()
+# --- 4. معالجة الملفات (الإضافة للطابور) ---
+@bot.message_handler(content_types=['document', 'video', 'audio'])
+def queue_files(message):
+    try:
+        # استخراج البيانات
+        file_obj = message.document or message.video or message.audio
+        file_name = file_obj.file_name if hasattr(file_obj, 'file_name') else message.caption or "كتاب"
+        file_id = file_obj.file_id
+        file_size = file_obj.file_size
+        file_hash = f"{file_name}_{file_size}" # بصمة لمنع التكرار
+
+        cur = db_conn.cursor()
         
-        bot.edit_message_text("✅ تم الأرشفة والنشر بنجاح!", msg.chat.id, status_msg.message_id)
+        # 1. فحص التكرار (هل نُشر من قبل؟)
+        cur.execute("SELECT status FROM files WHERE hash=?", (file_hash,))
+        exists = cur.fetchone()
+        if exists:
+            if exists[0] == 'published':
+                bot.reply_to(message, "⚠️ هذا الكتاب موجود بالفعل في القناة!")
+            else:
+                bot.reply_to(message, "⏳ هذا الكتاب موجود في الطابور وسينشر قريباً.")
+            return
+
+        # 2. الإضافة للطابور (Pending)
+        cur.execute("INSERT INTO files VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                    (file_hash, file_name, file_id, message.message_id, message.chat.id, 'pending', datetime.now().strftime("%Y-%m-%d")))
+        db_conn.commit()
+
+        # حساب ترتيبه في الطابور
+        cur.execute("SELECT COUNT(*) FROM files WHERE status='pending'")
+        queue_pos = cur.fetchone()[0]
+        
+        bot.reply_to(message, f"✅ **تمت الجدولة!**\nترتيبه في الطابور: {queue_pos}\nسيتم نشره تلقائياً دون تدخلك.")
+
     except Exception as e:
-        bot.edit_message_text(f"❌ خطأ في النشر: {e}", msg.chat.id, status_msg.message_id)
+        logger.error(f"Queue Error: {e}")
 
-# ================== لوحة التحكم (Admin) ==================
-@bot.message_handler(commands=["admin"])
-def admin_cmd(msg):
-    if msg.from_user.id != ADMIN_ID: return
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("📊 الإحصائيات", callback_data="stats"),
-        types.InlineKeyboardButton("🔒 وضع الصيانة", callback_data="toggle_maint")
-    )
-    bot.send_message(msg.chat.id, "🕹️ لوحة تحكم المكتبة:", reply_markup=kb)
+# --- 5. نظام النشر التلقائي (Background Worker) ---
+def publisher_worker():
+    """وظيفة تعمل في الخلفية لمعالجة الطابور واحداً تلو الآخر"""
+    print("⚙️ نظام جدولة النشر بدأ العمل...")
+    while True:
+        try:
+            # جلب أقدم كتاب في الانتظار
+            conn = sqlite3.connect(db_path) # اتصال خاص بالخيط
+            cur = conn.cursor()
+            cur.execute("SELECT hash, name, file_id, msg_id, chat_id FROM files WHERE status='pending' ORDER BY rowid ASC LIMIT 1")
+            book = cur.fetchone()
+            
+            if book:
+                f_hash, f_name, f_id, f_msg_id, f_chat_id = book
+                
+                # 1. تحليل الذكاء الاصطناعي
+                clean_name = f_name.replace('.pdf','').replace('.epub','').replace('_',' ').strip()
+                ai_text = get_ai_analysis(clean_name)
+                
+                # تفكيك النص
+                title, cat, desc, durar = clean_name, "عام", "وصف متاح", "العلم نور"
+                for line in ai_text.split('\n'):
+                    if "العنوان:" in line: title = line.replace("العنوان:", "").strip()
+                    if "التصنيف:" in line: cat = line.replace("التصنيف:", "").strip()
+                    if "الوصف:" in line: desc = line.replace("الوصف:", "").strip()
+                    if "درر:" in line: durar = line.replace("درر:", "").strip()
 
-@bot.callback_query_handler(func=lambda c: True)
-def admin_actions(call):
-    if call.from_user.id != ADMIN_ID: return
-    cur = db.cursor()
-    if call.data == "stats":
-        cur.execute("SELECT COUNT(*) FROM files")
-        count = cur.fetchone()[0]
-        bot.send_message(call.message.chat.id, f"📚 إجمالي الكتب المؤرشفة: {count}")
-    elif call.data == "toggle_maint":
-        cur.execute("SELECT value FROM settings WHERE key='maintenance'")
-        new = "OFF" if cur.fetchone()[0] == "ON" else "ON"
-        cur.execute("UPDATE settings SET value=?", (new,))
-        db.commit()
-        bot.answer_callback_query(call.id, f"وضع الصيانة الآن: {new}")
+                # تحديد الهاشتاجات بناءً على التصنيف
+                hashtags = f"#{cat.replace(' ','_')} #كتب #مكتبة_المليار #اليمن"
 
+                # 2. تنسيق الرسالة الاحترافية
+                caption = (
+                    f"📚 **العنوان:** {title}\n"
+                    f"📂 **التصنيف:** {cat}\n\n"
+                    f"📝 **نبذة:**\n{desc}\n\n"
+                    f"💎 **درر:**\nProcessing...\n_{durar}_\n\n"
+                    f"🔖 {hashtags}\n"
+                    f"🏛️ **[{LIB_NAME}]({LIB_LINK})**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📢 *مشروع نشر مليار كتاب*"
+                )
+
+                # 3. النشر في القناة
+                kb = types.InlineKeyboardMarkup()
+                kb.add(types.InlineKeyboardButton("انضم للمكتبة 📥", url=LIB_LINK))
+                
+                # إرسال الملف للقناة (نستخدم send_document بدلاً من copy لتفادي مشاكل الحذف)
+                bot.send_document(MAIN_CHANNEL, f_id, caption=caption, parse_mode="Markdown", reply_markup=kb)
+                
+                # 4. تحديث الحالة إلى منشور
+                cur.execute("UPDATE files SET status='published' WHERE hash=?", (f_hash,))
+                conn.commit()
+                print(f"🚀 تم نشر: {title}")
+                
+                # 5. فترة راحة لتجنب الحظر (45 ثانية)
+                time.sleep(POST_DELAY)
+            
+            else:
+                # إذا الطابور فارغ، انتظر قليلاً ثم افحص مرة أخرى
+                time.sleep(5)
+            
+            conn.close()
+
+        except Exception as e:
+            print(f"Publisher Error: {e}")
+            time.sleep(10) # انتظار عند الخطأ
+
+# --- 6. أوامر التحكم (Admin) ---
+@bot.message_handler(commands=['queue'])
+def check_queue(message):
+    if message.from_user.id != ADMIN_ID: return
+    cur = db_conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM files WHERE status='pending'")
+    count = cur.fetchone()[0]
+    bot.reply_to(message, f"📊 **حالة الطابور:**\nيوجد {count} كتاب قيد الانتظار للنشر.")
+
+# --- التشغيل ---
 if __name__ == "__main__":
-    print("🚀 البوت يعمل الآن بنظام البصمة السريعة...")
+    # تشغيل خيط النشر في الخلفية
+    threading.Thread(target=publisher_worker, daemon=True).start()
+    
+    print("🤖 البوت يعمل ويستقبل الملفات...")
     bot.infinity_polling()
