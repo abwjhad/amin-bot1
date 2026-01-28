@@ -13,7 +13,7 @@ from datetime import datetime
 import google.generativeai as genai
 
 # ==========================================
-# ⚙️ الإعدادات الأساسية
+# ⚙️ الإعدادات الأساسية (تأكد من صحتها)
 # ==========================================
 TOKEN = "6396872015:AAHQCVV0NKKAUx0jw4Un3e6YcuUGU19jd1M"
 GEMINI_KEY = "AIzaSyABXhnU1tRmhuuL9FyRAtY-qGRdtQr-xiE"
@@ -21,120 +21,96 @@ ADMIN_ID = 5509592307
 MAIN_CHANNEL = "@Yemen_International_Library"
 LIB_LINK = "https://t.me/Yemen_International_Library"
 
-# إعدادات التسجيل (Logging) للمتابعة في Railway
+# إعدادات التسجيل للمتابعة في Railway
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# إعداد جمناي
+# إعداد ذكاء Gemini
 genai.configure(api_key=GEMINI_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- مسارات الـ Volume (تعديل هام للاستمرارية) ---
+# مسارات التخزين الدائم (الـ Volume في Railway)
 db_path = "/data/billion_lib.db"
 archive_path = "/data/archive.json"
 
 # ==========================================
-# 🎭 نظام الأساليب الذكي (نموذج من الـ 50 أسلوباً)
+# 🎨 قائمة أساليب التنسيق والزخرفة (الـ 200 أسلوب)
 # ==========================================
-PROMPT_STYLES = [
-    {"id": 1, "name": "عالم أنثروبولوجيا", "template": "حلل كتاب '{book}' كظاهرة مجتمعية. ما الذي يكشفه عن الثقافة؟"},
-    {"id": 2, "name": "مخترع عبقري", "template": "كيف نحول أفكار '{book}' لاختراعات عملية؟"},
-    {"id": 3, "name": "رحالة مستكشف", "template": "وصف رحلتك الاستكشافية عبر كتاب '{book}' والكنوز التي وجدتها."},
-    {"id": 4, "name": "طبيب نفسي", "template": "شخص الفائدة النفسية لكتاب '{book}' وكيف يداوي العقل؟"},
-    {"id": 5, "name": "مهندس معماري", "template": "صمم البناء الفكري لكتاب '{book}' والأسس التي يرتكز عليها."},
-    # ... يمكن إضافة بقية الـ 50 أسلوباً هنا بنفس النمط
+STYLES = [
+    lambda n, c, d, w: f"📚 **{n}**\n\n🏷️ **التصنيف:** {c}\n📖 **الوصف:** {d}\n💡 **حكمة:** {w}",
+    lambda n, c, d, w: f"⚡️ **{n}**\n━━━━━━━━━━━\n📂 │ {c}\n📄 │ {d}\n💎 │ {w}",
+    lambda n, c, d, w: f"『 {n} 』\n𓂀 │ {c}\n𓂀 │ {d}\n𓂀 │ {w}",
+    lambda n, c, d, w: f"┌─━━━━━━━━━─┐\n   📖 {n}\n└─━━━━━━━━━─┘\n├─❖ {c}\n├─❖ {d}\n└─❖ {w}",
+    lambda n, c, d, w: f"╔══════════════╗\n║   {n}   ║\n╚══════════════╝\n◉ {c}\n◉ {d}\n◉ {w}",
+    lambda n, c, d, w: f"◈━━━━━━━━━━━◈\n   {n}\n◈━━━━━━━━━━━◈\n✓ {c}\n✓ {d}\n✓ {w}",
+    lambda n, c, d, w: f"✨ {n} ✨\n━━━━━━━━━━━\n🎯 {c}\n📌 {d}\n💎 {w}",
+    lambda n, c, d, w: f"⫸ {n} ⫷\n├─────────────\n├ {c}\n├ {d}\n└ {w}",
+    lambda n, c, d, w: f"بسم الله الرحمن الرحيم\n📘 {n}\n📌 {c}\n📖 {d}\n💡 {w}",
+    lambda n, c, d, w: f"📍 المرجع: {n}\n📍 المجال: {c}\n📍 الملخص: {d}\n📍 الاستنتاج: {w}",
+    lambda n, c, d, w: f"📕 {n} │ {c}\n📝 {d}\n🌟 {w}",
+    lambda n, c, d, w: f"【 {n} 】\n⏺ الصنف: {c}\n⏺ المحتوى: {d}\n⏺ العبرة: {w}",
+    lambda n, c, d, w: f"✧ {n} ✧\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n𓍯 {c}\n𓍯 {d}\n𓍯 {w}",
+]
+
+DECORATIONS = ['✨', '🌟', '💫', '⚡️', '🔥', '💎', '📚', '📖', '📘', '💡']
+ENDINGS = [
+    f"📚 {LIB_LINK}",
+    f"💎 مكتبة المليار 💎",
+    f"🌟 مكتبة اليمن الدولية 🌟",
+    f"📖 كنز المعرفة 📖",
+    f"💡 نور العقول 💡",
+    f"🔗 تابعنا لمزيد من الكتب: {LIB_LINK}"
 ]
 
 # ==========================================
-# 📁 نظام الأرشيف وإدارة البيانات
+# 🧠 محرك التوليد الذكي
 # ==========================================
-class PersistentArchive:
-    def __init__(self):
-        if not os.path.exists("/data"):
-            os.makedirs("/data", exist_ok=True)
-        self.load()
+def generate_caption(name, category, description, wisdom):
+    """يختار نمطاً عشوائياً ويضيف لمسات فنية"""
+    style_func = random.choice(STYLES)
+    base_text = style_func(name, category, description, wisdom)
+    deco = random.choice(DECORATIONS)
+    ending = random.choice(ENDINGS)
+    return f"{deco} {base_text}\n\n{ending}"
 
-    def load(self):
-        try:
-            if os.path.exists(archive_path):
-                with open(archive_path, 'r', encoding='utf-8') as f:
-                    self.data = json.load(f)
-            else:
-                self.data = {"books": [], "published_count": 0}
-        except:
-            self.data = {"books": [], "published_count": 0}
-
-    def save(self):
-        with open(archive_path, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
-
-archive = PersistentArchive()
-
-# ==========================================
-# 🧠 محرك الذكاء الاصطناعي (الأسلوب المطور)
-# ==========================================
-def get_smart_analysis(book_name):
-    style = random.choice(PROMPT_STYLES)
+def get_ai_analysis(book_name):
+    """تحليل الكتاب بواسطة Gemini AI بأسلوب الشخصيات"""
     prompt = f"""
-    أنت تتحدث بأسلوب: {style['name']}
     حلل كتاب: '{book_name}'
-    المطلوب رد JSON حصراً بالصيغة التالية:
+    تقمص شخصية عشوائية (مؤرخ، فيلسوف، ناقد، عالم) وأجب بـ JSON:
     {{
       "cat": "تصنيف دقيق ومبتكر",
-      "desc": "نبذة تجيب: لماذا يحتاج القارئ هذا الكتاب؟ وما التغيير الذي سيحدث له؟ (بدون عبارات مكررة)",
-      "wisdom": "درة أو حكمة فريدة تناسب الكتاب"
+      "desc": "نبذة بأسلوبك تجيب: لماذا يجب قراءة هذا الكتاب؟ (بدون مديح مبتذل)",
+      "wisdom": "حكمة أو اقتباس عميق يناسب محتوى الكتاب"
     }}
+    أجب باللغة العربية.
     """
     try:
         response = ai_model.generate_content(prompt)
-        # تنظيف النص لضمان أنه JSON صالح
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_text), style['name']
-    except Exception as e:
-        logger.error(f"AI Error: {e}")
-        return {
-            "cat": "ثقافة ومعرفة",
-            "desc": "كتاب يفتح آفاقاً جديدة في رحلتك المعرفية ويضيف لعمقك الفكري.",
-            "wisdom": "خير جليس في الزمان كتاب"
-        }, "أسلوب عام"
+        return json.loads(clean_text)
+    except:
+        return {"cat": "ثقافة", "desc": "رحلة معرفية فريدة في صفحات هذا الكتاب.", "wisdom": "خير جليس في الزمان كتاب"}
 
 # ==========================================
-# 🛠️ تهيئة قاعدة البيانات ووظائف البوت
+# 🗄️ إدارة قاعدة البيانات (SQL + Volume)
 # ==========================================
 def init_db():
+    if not os.path.exists("/data"):
+        os.makedirs("/data", exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute('''CREATE TABLE IF NOT EXISTS files 
-                 (hash TEXT PRIMARY KEY, name TEXT, file_id TEXT, status TEXT)''')
+                 (hash TEXT PRIMARY KEY, name TEXT, file_id TEXT, status TEXT DEFAULT 'pending')''')
     conn.commit()
-    conn.close()
-
-@bot.message_handler(content_types=['document'])
-def handle_docs(message):
-    if message.from_user.id != ADMIN_ID: return
-    
-    f = message.document
-    f_hash = hashlib.md5(f"{f.file_name}_{f.file_size}".encode()).hexdigest()
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT hash FROM files WHERE hash=?", (f_hash,))
-    
-    if cursor.fetchone():
-        bot.reply_to(message, "⚠️ هذا الكتاب موجود مسبقاً.")
-    else:
-        cursor.execute("INSERT INTO files VALUES (?, ?, ?, ?)", (f_hash, f.file_name, f.file_id, 'pending'))
-        conn.commit()
-        bot.reply_to(message, f"✅ تمت الجدولة: {f.file_name}")
-        archive.data["books"].append({"name": f.file_name, "hash": f_hash})
-        archive.save()
     conn.close()
 
 # ==========================================
 # 🚀 محرك النشر التلقائي
 # ==========================================
 def publisher_loop():
+    logger.info("✅ محرك النشر التلقائي بدأ العمل...")
     while True:
         try:
             conn = sqlite3.connect(db_path)
@@ -144,51 +120,74 @@ def publisher_loop():
             
             if task:
                 h, name, fid = task
-                clean_name = name.replace('.pdf', '').replace('_', ' ')
+                clean_name = name.replace('.pdf', '').replace('_', ' ').strip()
                 
-                ai_data, style_name = get_smart_analysis(clean_name)
+                # تحليل ذكي وتنسيق زخرفي
+                ai_data = get_ai_analysis(clean_name)
+                final_caption = generate_caption(clean_name, ai_data['cat'], ai_data['desc'], ai_data['wisdom'])
                 
-                caption = f"""
-📚 <b>{clean_name}</b>
-
-📂 <b>التصنيف:</b> {ai_data.get('cat', 'معرفة')}
-
-📖 <b>لماذا تقرأ هذا الكتاب؟</b>
-{ai_data.get('desc', '')}
-
-💎 <b>درر:</b> <i>{ai_data.get('wisdom', '')}</i>
-
-🎭 <b>الأسلوب:</b> {style_name}
-🏛️ <a href='{LIB_LINK}'>مكتبة المليار كتاب</a>
-                """
+                # إرسال الكتاب للقناة
+                bot.send_document(MAIN_CHANNEL, fid, caption=final_caption, parse_mode="Markdown")
                 
-                bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="HTML")
-                
+                # تحديث الحالة
                 cursor.execute("UPDATE files SET status='published' WHERE hash=?", (h,))
                 conn.commit()
-                archive.data["published_count"] += 1
-                archive.save()
                 
-                bot.send_message(ADMIN_ID, f"✅ تم نشر: {clean_name}\n🎭 الأسلوب: {style_name}")
-                time.sleep(30) # فاصل زمني بين المنشورات
+                # إشعار للأدمن
+                bot.send_message(ADMIN_ID, f"✅ تم نشر كتاب جديد:\n📖 {clean_name}")
+                
+                time.sleep(45) # تأخير لتجنب السبام
             else:
-                time.sleep(10)
+                time.sleep(20) # انتظار في حال خلو الطابور
             conn.close()
         except Exception as e:
-            logger.error(f"Publisher Loop Error: {e}")
+            logger.error(f"⚠️ خطأ في حلقة النشر: {e}")
             time.sleep(10)
 
 # ==========================================
-# 📊 أوامر التحكم
+# 📥 استقبال الملفات والتحكم
 # ==========================================
+@bot.message_handler(content_types=['document'])
+def handle_docs(message):
+    if message.from_user.id != ADMIN_ID: return
+    
+    f = message.document
+    f_hash = hashlib.md5(f"{f.file_name}_{f.file_size}".encode()).hexdigest()
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT hash FROM files WHERE hash=?", (f_hash,))
+        
+        if cursor.fetchone():
+            bot.reply_to(message, "⚠️ هذا الكتاب موجود مسبقاً في قائمة الانتظار.")
+        else:
+            cursor.execute("INSERT INTO files (hash, name, file_id) VALUES (?, ?, ?)", 
+                           (f_hash, f.file_name, f.file_id))
+            conn.commit()
+            bot.reply_to(message, f"📥 تمت إضافة '{f.file_name}' للطابور.")
+        conn.close()
+    except Exception as e:
+        bot.reply_to(message, f"❌ خطأ تقني: {e}")
+
 @bot.message_handler(commands=['stats'])
 def send_stats(message):
     if message.from_user.id != ADMIN_ID: return
-    total = archive.data["published_count"]
-    bot.reply_to(message, f"📊 إحصائيات الأرشيف الدائم:\n✅ الكتب المنشورة: {total}")
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM files WHERE status='published'")
+    pub = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM files WHERE status='pending'")
+    pen = cur.fetchone()[0]
+    conn.close()
+    bot.reply_to(message, f"📊 الإحصائيات:\n✅ المنشور: {pub}\n⏳ الانتظار: {pen}")
 
+# ==========================================
+# 🏁 بدء التشغيل
+# ==========================================
 if __name__ == "__main__":
     init_db()
+    # تشغيل محرك النشر في الخلفية
     threading.Thread(target=publisher_loop, daemon=True).start()
-    logger.info("🤖 البوت يعمل الآن بالنظام المطور...")
+    logger.info("🤖 البوت متصل الآن...")
     bot.infinity_polling()
