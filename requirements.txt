@@ -1,3 +1,9 @@
-pyTelegramBotAPI
-google-generativeai
-requests
+pyTelegramBotAPI==4.15.0
+google-generativeai==0.3.2
+requests==2.31.0
+Pillow==10.1.0
+PyMuPDF==1.23.8
+python-docx==1.1.0
+moviepy==1.0.3
+SpeechRecognition==3.10.1
+pydub==0.25.1
