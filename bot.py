@@ -23,7 +23,7 @@ import speech_recognition as sr
 from pydub import AudioSegment
 
 # ==========================================
-# ⚙️ الإعدادات (تم دمج التوكنات الخاصة بك)
+# ⚙️ الإعدادات (التوكنات والروابط)
 # ==========================================
 TOKEN = "6396872015:AAHQCVV0NKKAUx0jw4Un3e6YcuUGU19jd1M"
 GEMINI_KEY = "AIzaSyABXhnU1tRmhuuL9FyRAtY-qGRdtQr-xiE"
@@ -32,12 +32,10 @@ MAIN_CHANNEL = "@Yemen_International_Library"
 LIB_LINK = "https://t.me/Yemen_International_Library"
 WATERMARK_TEXT = "مكتبة المليار\n@Yemen_International_Library"
 
-# إعداد المسارات (متوافق مع Railway Volume)
-# نستخدم /data إذا كان موجوداً (للإنتاج)، وإلا نستخدم مجلد محلي
-if os.path.exists("/data"):
-    DATA_DIR = "/data"
-else:
-    DATA_DIR = "data"
+# إعداد المسارات (متوافق تماماً مع Railway Volume)
+# نستخدم /app/data كمسار افتراضي للـ Volume في Railway
+DATA_DIR = "/app/data" if os.path.exists("/app/data") else "data"
+if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DATA_DIR, "billion_lib.db")
@@ -52,7 +50,7 @@ ai_model = genai.GenerativeModel('gemini-1.5-flash')
 bot = telebot.TeleBot(TOKEN)
 
 # ==========================================
-# 🎨 أنماط التنسيق والزخرفة (مختارات مميزة)
+# 🎨 أنماط التنسيق والزخرفة
 # ==========================================
 STYLES = [
     lambda n, c, d, w: f"📚 **{n}**\n\n🏷️ **التصنيف:** {c}\n📖 **الوصف:** {d}\n💡 **حكمة:** {w}",
@@ -81,7 +79,6 @@ QUOTES = ["خير جليس في الزمان كتاب", "العلم نور", "ا
 # 🧠 وظائف الذكاء الاصطناعي والتحليل
 # ==========================================
 def get_ai_analysis(book_name, extracted_text=""):
-    """تحليل المحتوى باستخدام Gemini"""
     if extracted_text:
         prompt = f"""
         الكتاب/الملف: '{book_name}'
@@ -109,7 +106,6 @@ def get_ai_analysis(book_name, extracted_text=""):
         }
 
 def generate_caption(name, category, description, wisdom):
-    """توليد وصف مزخرف"""
     style_func = random.choice(STYLES)
     base = style_func(name, category, description, wisdom)
     deco = random.choice(DECORATIONS)
@@ -120,7 +116,6 @@ def generate_caption(name, category, description, wisdom):
 # 🛠️ أدوات المعالجة (نص، صور، فيديو، صوت)
 # ==========================================
 def extract_text_from_file(file_content, file_name):
-    """استخراج النصوص من ملفات مختلفة"""
     ext = file_name.lower().split('.')[-1]
     text = ""
     try:
@@ -140,24 +135,19 @@ def extract_text_from_file(file_content, file_name):
     return text[:3000]
 
 def add_watermark(image_bytes):
-    """إضافة علامة مائية للصورة"""
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         txt = Image.new('RGBA', img.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt)
-        
-        # محاولة تحميل خط، أو استخدام الافتراضي
         try:
             font = ImageFont.truetype("arial.ttf", int(img.width / 20))
         except:
             font = ImageFont.load_default()
 
-        # رسم النص في المنتصف السفلي
         bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x, y = (img.width - w) / 2, img.height - h - 20
         
-        # خلفية شبه شفافة للنص
         draw.rectangle([x-10, y-10, x+w+10, y+h+10], fill=(0, 0, 0, 100))
         draw.text((x, y), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 200))
         
@@ -171,13 +161,12 @@ def add_watermark(image_bytes):
         return image_bytes
 
 def get_video_frame(video_bytes):
-    """استخراج لقطة من الفيديو لوضع العلامة المائية عليها"""
     try:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as t:
             t.write(video_bytes)
             t.flush()
             clip = VideoFileClip(t.name)
-            frame = clip.get_frame(2) # ثانية رقم 2
+            frame = clip.get_frame(2)
             img = Image.fromarray(frame)
             bio = io.BytesIO()
             img.save(bio, format='JPEG')
@@ -189,7 +178,6 @@ def get_video_frame(video_bytes):
         return None
 
 def audio_to_text(audio_bytes):
-    """تحويل الصوت إلى نص (لأغراض التحليل)"""
     try:
         with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as t:
             t.write(audio_bytes)
@@ -202,28 +190,31 @@ def audio_to_text(audio_bytes):
         return ""
 
 # ==========================================
-# 🗄️ إدارة قاعدة البيانات (SQL)
+# 🗄️ إدارة قاعدة البيانات (تم دمج حل مشكلة added_at)
 # ==========================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # إنشاء الجدول مع دعم التحديثات القديمة
+    # إنشاء الجدول
     c.execute('''CREATE TABLE IF NOT EXISTS files 
                  (hash TEXT PRIMARY KEY, name TEXT, file_id TEXT, 
                   file_type TEXT, status TEXT DEFAULT 'pending', 
                   added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
-    # التحقق من وجود الأعمدة الجديدة (في حال كان هناك قاعدة بيانات قديمة)
-    try:
-        c.execute("SELECT file_type FROM files LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE files ADD COLUMN file_type TEXT DEFAULT 'document'")
+    # فحص وإضافة الأعمدة إذا كانت مفقودة (لمعالجة خطأ السجل السابق)
+    c.execute("PRAGMA table_info(files)")
+    columns = [column[1] for column in c.fetchall()]
+    
+    if 'added_at' not in columns:
+        logger.info("🛠️ تحديث: إضافة عمود added_at لقاعدة البيانات...")
         c.execute("ALTER TABLE files ADD COLUMN added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        logger.info("🛠️ تم تحديث قاعدة البيانات وإضافة الأعمدة الجديدة.")
+    
+    if 'file_type' not in columns:
+        c.execute("ALTER TABLE files ADD COLUMN file_type TEXT DEFAULT 'document'")
         
     conn.commit()
     conn.close()
-    logger.info(f"✅ قاعدة البيانات جاهزة في: {DB_PATH}")
+    logger.info(f"✅ قاعدة البيانات جاهزة ومؤمنة في: {DB_PATH}")
 
 # ==========================================
 # 📥 استقبال الملفات (Admin Only)
@@ -233,7 +224,6 @@ def handle_files(message):
     if message.from_user.id != ADMIN_ID: return
 
     try:
-        # تحديد نوع الملف
         ftype = 'document'
         fname = "ملف"
         fid = None
@@ -243,7 +233,7 @@ def handle_files(message):
             fname = message.document.file_name
         elif message.photo:
             fid = message.photo[-1].file_id
-            fname = f"IMG_{datetime.now().strftime('%Y%m%d')}.jpg"
+            fname = f"IMG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
             ftype = 'image'
         elif message.video:
             fid = message.video.file_id
@@ -256,19 +246,18 @@ def handle_files(message):
 
         if not fid: return
 
-        # منع التكرار
         fhash = hashlib.md5(f"{fname}{fid}".encode()).hexdigest()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT hash FROM files WHERE hash=?", (fhash,))
         
+        c.execute("SELECT hash FROM files WHERE hash=?", (fhash,))
         if c.fetchone():
             bot.reply_to(message, "⚠️ هذا الملف موجود بالفعل في الطابور.")
         else:
             c.execute("INSERT INTO files (hash, name, file_id, file_type, status) VALUES (?,?,?,?,?)",
                       (fhash, fname, fid, ftype, 'pending'))
             conn.commit()
-            bot.reply_to(message, f"✅ تمت إضافة **{fname}** ({ftype}) للطابور.")
+            bot.reply_to(message, f"✅ تمت إضافة **{fname}** للطابور.")
         conn.close()
         
     except Exception as e:
@@ -284,7 +273,6 @@ def publisher_loop():
         try:
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            # جلب أقدم ملف "pending"
             c.execute("SELECT hash, name, file_id, file_type FROM files WHERE status='pending' ORDER BY added_at ASC LIMIT 1")
             task = c.fetchone()
             
@@ -292,11 +280,9 @@ def publisher_loop():
                 fhash, fname, fid, ftype = task
                 logger.info(f"📤 جاري معالجة: {fname}")
                 
-                # تحميل الملف
                 file_info = bot.get_file(fid)
                 downloaded = bot.download_file(file_info.file_path)
                 
-                # 1. معالجة المحتوى (استخراج نص / علامة مائية)
                 extracted_text = ""
                 final_media = downloaded
                 
@@ -306,18 +292,14 @@ def publisher_loop():
                     final_media = add_watermark(downloaded)
                 elif ftype == 'video':
                     frame = get_video_frame(downloaded)
-                    if frame: final_media = add_watermark(frame) # نستخدم الإطار للصورة المصغرة أو نرسل الفيديو كما هو
+                    if frame: final_media = add_watermark(frame)
                 elif ftype == 'audio':
                     extracted_text = audio_to_text(downloaded)
 
-                # 2. تحليل AI
                 clean_name = fname.replace('.pdf', '').replace('.docx', '').replace('_', ' ')
                 ai_data = get_ai_analysis(clean_name, extracted_text)
-                
-                # 3. صياغة المنشور
                 caption = generate_caption(clean_name, ai_data['cat'], ai_data['desc'], ai_data['wisdom'])
                 
-                # 4. الإرسال للقناة
                 try:
                     if ftype == 'image':
                         bot.send_photo(MAIN_CHANNEL, final_media, caption=caption, parse_mode="Markdown")
@@ -328,22 +310,18 @@ def publisher_loop():
                     else:
                         bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
                     
-                    # تحديث الحالة
                     c.execute("UPDATE files SET status='published' WHERE hash=?", (fhash,))
                     conn.commit()
                     bot.send_message(ADMIN_ID, f"📢 تم نشر: {fname}")
-                    time.sleep(40) # انتظار بين المنشورات
+                    time.sleep(40) 
                     
                 except Exception as send_err:
                     logger.error(f"Failed to send {fname}: {send_err}")
                     c.execute("UPDATE files SET status='failed' WHERE hash=?", (fhash,))
                     conn.commit()
-            
             else:
-                time.sleep(20) # الانتظار عند خلو الطابور
-            
+                time.sleep(20)
             conn.close()
-            
         except Exception as e:
             logger.error(f"Publisher Loop Error: {e}")
             time.sleep(10)
@@ -376,9 +354,7 @@ def clear_failed(message):
 # ==========================================
 if __name__ == "__main__":
     init_db()
-    # تشغيل عملية النشر في الخلفية
     t = threading.Thread(target=publisher_loop, daemon=True)
     t.start()
-    
-    logger.info("🤖 البوت يعمل الآن ويستقبل الملفات...")
+    logger.info("🤖 البوت يعمل بكامل وظائفه...")
     bot.infinity_polling()
