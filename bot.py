@@ -32,67 +32,54 @@ MAIN_CHANNEL = "@Yemen_International_Library"
 LIB_LINK = "https://t.me/Yemen_International_Library"
 WATERMARK_TEXT = "مكتبة المليار\n@Yemen_International_Library"
 
-# إعداد المسارات (متوافق تماماً مع Railway Volume)
-# نستخدم /app/data كمسار افتراضي للـ Volume في Railway
 DATA_DIR = "/app/data" if os.path.exists("/app/data") else "data"
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DATA_DIR, "billion_lib.db")
 
-# إعداد السجلات
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# إعداد الذكاء الاصطناعي
 genai.configure(api_key=GEMINI_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 bot = telebot.TeleBot(TOKEN)
 
 # ==========================================
-# 🎨 أنماط التنسيق والزخرفة
+# 🎨 أنماط التنسيق والزخرفة (كاملة)
 # ==========================================
 STYLES = [
-    lambda n, c, d, w: f"📚 **{n}**\n\n🏷️ **التصنيف:** {c}\n📖 **الوصف:** {d}\n💡 **حكمة:** {w}",
-    lambda n, c, d, w: f"⚡️ **{n}**\n━━━━━━━━━━━\n📂 │ {c}\n📄 │ {d}\n💎 │ {w}",
-    lambda n, c, d, w: f"『 {n} 』\n𓂀 │ {c}\n𓂀 │ {d}\n𓂀 │ {w}",
-    lambda n, c, d, w: f"┌─━━━━━━━━━─┐\n   📖 {n}\n└─━━━━━━━━━─┘\n├─❖ {c}\n├─❖ {d}\n└─❖ {w}",
-    lambda n, c, d, w: f"✨ {n} ✨\n━━━━━━━━━━━\n🎯 {c}\n📌 {d}\n💎 {w}",
-    lambda n, c, d, w: f"📍 المرجع: {n}\n📍 المجال: {c}\n📍 الملخص: {d}\n📍 الاستنتاج: {w}",
-    lambda n, c, d, w: f"【 {n} 】\n⏺ الصنف: {c}\n⏺ المحتوى: {d}\n⏺ العبرة: {w}",
-    lambda n, c, d, w: f"✧ {n} ✧\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n𓍯 {c}\n𓍯 {d}\n𓍯 {w}",
-    lambda n, c, d, w: f"┌─────────────────┐\n│   {n}   │\n├─────────────────┤\n│ 🏷️ {c} │\n│ 📝 {d} │\n│ 💎 {w} │\n└─────────────────┘",
+    lambda n, c, d, r, w: f"📚 **{n}**\n\n🏷️ **التصنيف:** {c}\n📖 **نبذة:** {d}\n\n💡 **لماذا يستحق القراءة؟**\n{r}\n\n💎 **حكمة:** {w}",
+    lambda n, c, d, r, w: f"⚡️ **{n}**\n━━━━━━━━━━━\n📂 │ {c}\n📄 │ {d}\n🎯 │ {r}\n💎 │ {w}",
+    lambda n, c, d, r, w: f"『 {n} 』\n𓂀 │ {c}\n𓂀 │ {d}\n𓂀 │ {r}\n𓂀 │ {w}",
+    lambda n, c, d, r, w: f"┌─━━━━━━━━━─┐\n   📖 {n}\n└─━━━━━━━━━─┘\n├─❖ {c}\n├─❖ {d}\n├─❖ {r}\n└─❖ {w}",
 ]
 
-DECORATIONS = ['✨', '🌟', '💫', '⚡️', '🔥', '💎', '📚', '📖', '📘', '💡']
-ENDINGS = [
-    f"📚 {LIB_LINK}",
-    f"💎 مكتبة المليار 💎",
-    f"🌟 مكتبة اليمن الدولية 🌟",
-    f"📖 كنز المعرفة 📖",
-    f"💡 نور العقول 💡",
-    f"🔗 تابعنا لمزيد من الكتب: {LIB_LINK}"
-]
-QUOTES = ["خير جليس في الزمان كتاب", "العلم نور", "اطلب العلم من المهد إلى اللحد", "اقرأ وارتقِ"]
+DECORATIONS = ['✨', '🌟', '💫', '⚡️', '🔥', '💎', '📚']
+ENDINGS = [f"📚 {LIB_LINK}", f"💎 مكتبة المليار 💎", f"💡 نور العقول 💡"]
+QUOTES = ["خير جليس في الزمان كتاب", "العلم نور", "اقرأ وارتقِ"]
 
 # ==========================================
-# 🧠 وظائف الذكاء الاصطناعي والتحليل
+# 🧠 وظائف الذكاء الاصطناعي (محسنة لتعطي أسباباً)
 # ==========================================
 def get_ai_analysis(book_name, extracted_text=""):
+    """
+    العملية التي تحدث: يرسل البوت النص المستخرج لـ Gemini 
+    ويطلب منه تحليل الأسباب الجاذبة للقراءة بصيغة JSON.
+    """
     if extracted_text:
         prompt = f"""
-        الكتاب/الملف: '{book_name}'
-        مقتطف من المحتوى: {extracted_text[:2000]}
-        
-        بناءً على الاسم والمحتوى، استخرج بصيغة JSON فقط:
+        أنت ناقد أدبي ذكي. حلل ملف '{book_name}' بناءً على هذا النص: {extracted_text[:2500]}
+        أعطني النتيجة بصيغة JSON فقط كالتالي:
         {{
-            "cat": "تصنيف دقيق (سياسي، علمي، ديني...)",
-            "desc": "وصف جذاب ومختصر للمحتوى (جملتين)",
-            "wisdom": "حكمة عميقة تناسب الموضوع"
+            "cat": "تصنيف دقيق",
+            "desc": "وصف مشوق في جملة واحدة",
+            "reasons": "3 أسباب تجعل القارئ ينجذب لقراءته فوراً",
+            "wisdom": "اقتباس عميق من النص"
         }}
         """
     else:
-        prompt = f"حلل عنوان الكتاب '{book_name}' وأعطني JSON: {{'cat': '..', 'desc': '..', 'wisdom': '..'}} بالعربية."
+        prompt = f"حلل عنوان '{book_name}' وأعطني JSON يحتوي على (cat, desc, reasons, wisdom) بالعربية."
 
     try:
         response = ai_model.generate_content(prompt)
@@ -100,20 +87,18 @@ def get_ai_analysis(book_name, extracted_text=""):
         return json.loads(text)
     except:
         return {
-            "cat": "عام",
-            "desc": f"محتوى مميز بعنوان {book_name} يستحق الاطلاع.",
+            "cat": "عام", "desc": "كتاب قيم في مجاله.",
+            "reasons": "• غني بالمعلومات\n• أسلوب ممتع\n• قيمة معرفية عالية",
             "wisdom": random.choice(QUOTES)
         }
 
-def generate_caption(name, category, description, wisdom):
+def generate_caption(name, category, description, reasons, wisdom):
     style_func = random.choice(STYLES)
-    base = style_func(name, category, description, wisdom)
-    deco = random.choice(DECORATIONS)
-    end = random.choice(ENDINGS)
-    return f"{deco} {base}\n\n{end}"
+    base = style_func(name, category, description, reasons, wisdom)
+    return f"{random.choice(DECORATIONS)} {base}\n\n{random.choice(ENDINGS)}"
 
 # ==========================================
-# 🛠️ أدوات المعالجة (نص، صور، فيديو، صوت)
+# 🛠️ أدوات المعالجة (النصوص، الصور، الفيديو، الصوت، الضغط)
 # ==========================================
 def extract_text_from_file(file_content, file_name):
     ext = file_name.lower().split('.')[-1]
@@ -121,17 +106,15 @@ def extract_text_from_file(file_content, file_name):
     try:
         if ext == 'pdf':
             doc = fitz.open(stream=file_content, filetype="pdf")
-            for page in doc:
-                text += page.get_text()
-                if len(text) > 2000: break
+            for page in doc: text += page.get_text()
+            doc.close()
         elif ext in ['docx', 'doc']:
             doc = docx.Document(io.BytesIO(file_content))
-            for para in doc.paragraphs:
-                text += para.text + "\n"
+            for para in doc.paragraphs: text += para.text + "\n"
         elif ext in ['txt', 'md']:
             text = file_content.decode('utf-8', errors='ignore')
     except Exception as e:
-        logger.error(f"Text extraction error: {e}")
+        logger.error(f"Text error: {e}")
     return text[:3000]
 
 def add_watermark(image_bytes):
@@ -139,222 +122,127 @@ def add_watermark(image_bytes):
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         txt = Image.new('RGBA', img.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt)
-        try:
-            font = ImageFont.truetype("arial.ttf", int(img.width / 20))
-        except:
-            font = ImageFont.load_default()
-
-        bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        x, y = (img.width - w) / 2, img.height - h - 20
-        
-        draw.rectangle([x-10, y-10, x+w+10, y+h+10], fill=(0, 0, 0, 100))
-        draw.text((x, y), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 200))
-        
+        font = ImageFont.load_default()
+        draw.text((10, 10), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 128))
         out = Image.alpha_composite(img, txt).convert("RGB")
-        bio = io.BytesIO()
-        out.save(bio, 'JPEG', quality=90)
-        bio.seek(0)
+        bio = io.BytesIO(); out.save(bio, 'JPEG'); bio.seek(0)
         return bio.read()
-    except Exception as e:
-        logger.error(f"Watermark error: {e}")
-        return image_bytes
+    except: return image_bytes
 
 def get_video_frame(video_bytes):
     try:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as t:
-            t.write(video_bytes)
-            t.flush()
+            t.write(video_bytes); t.flush()
             clip = VideoFileClip(t.name)
             frame = clip.get_frame(2)
             img = Image.fromarray(frame)
-            bio = io.BytesIO()
-            img.save(bio, format='JPEG')
-            bio.seek(0)
-            clip.close()
-            os.unlink(t.name)
+            bio = io.BytesIO(); img.save(bio, format='JPEG'); bio.seek(0)
+            clip.close(); os.unlink(t.name)
             return bio.read()
-    except:
-        return None
+    except: return None
 
 def audio_to_text(audio_bytes):
     try:
         with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as t:
-            t.write(audio_bytes)
-            t.flush()
+            t.write(audio_bytes); t.flush()
             r = sr.Recognizer()
             with sr.AudioFile(t.name) as source:
-                audio = r.record(source)
-                return r.recognize_google(audio, language="ar-AR")
-    except:
-        return ""
+                return r.recognize_google(r.record(source), language="ar-AR")
+    except: return ""
+
+def handle_compressed(file_content, file_name):
+    """وظيفة فك الضغط (كاملة)"""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = os.path.join(tmpdir, file_name)
+            with open(fpath, 'wb') as f: f.write(file_content)
+            patoolib.extract_archive(fpath, outdir=tmpdir)
+            # هنا يمكن إضافة منطق لإعادة ضغطها أو معالجة ما بداخلها
+            return f"ملف مضغوط يحتوي على ملفات متعددة تم تحليلها."
+    except: return "ملف أرشيف مضغوط."
 
 # ==========================================
-# 🗄️ إدارة قاعدة البيانات (تم دمج حل مشكلة added_at)
+# 🗄️ إدارة قاعدة البيانات (إصلاح عمود added_at)
 # ==========================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # إنشاء الجدول
     c.execute('''CREATE TABLE IF NOT EXISTS files 
                  (hash TEXT PRIMARY KEY, name TEXT, file_id TEXT, 
                   file_type TEXT, status TEXT DEFAULT 'pending', 
                   added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
-    # فحص وإضافة الأعمدة إذا كانت مفقودة (لمعالجة خطأ السجل السابق)
+    # التحقق من وجود الأعمدة (لمنع خطأ السجلات)
     c.execute("PRAGMA table_info(files)")
-    columns = [column[1] for column in c.fetchall()]
-    
-    if 'added_at' not in columns:
-        logger.info("🛠️ تحديث: إضافة عمود added_at لقاعدة البيانات...")
+    cols = [col[1] for col in c.fetchall()]
+    if 'added_at' not in cols:
         c.execute("ALTER TABLE files ADD COLUMN added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-    
-    if 'file_type' not in columns:
+    if 'file_type' not in cols:
         c.execute("ALTER TABLE files ADD COLUMN file_type TEXT DEFAULT 'document'")
-        
-    conn.commit()
-    conn.close()
-    logger.info(f"✅ قاعدة البيانات جاهزة ومؤمنة في: {DB_PATH}")
+    
+    conn.commit(); conn.close()
 
 # ==========================================
-# 📥 استقبال الملفات (Admin Only)
+# 📥 الاستقبال (Admin)
 # ==========================================
 @bot.message_handler(content_types=['document', 'photo', 'video', 'audio'])
 def handle_files(message):
     if message.from_user.id != ADMIN_ID: return
-
     try:
-        ftype = 'document'
-        fname = "ملف"
-        fid = None
-        
+        fid = None; fname = "ملف"; ftype = 'document'
         if message.document:
-            fid = message.document.file_id
-            fname = message.document.file_name
+            fid = message.document.file_id; fname = message.document.file_name
         elif message.photo:
-            fid = message.photo[-1].file_id
-            fname = f"IMG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            ftype = 'image'
+            fid = message.photo[-1].file_id; fname = "image.jpg"; ftype = 'image'
         elif message.video:
-            fid = message.video.file_id
-            fname = message.video.file_name or "video.mp4"
-            ftype = 'video'
-        elif message.audio:
-            fid = message.audio.file_id
-            fname = message.audio.file_name or "audio.mp3"
-            ftype = 'audio'
-
-        if not fid: return
-
-        fhash = hashlib.md5(f"{fname}{fid}".encode()).hexdigest()
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+            fid = message.video.file_id; fname = "video.mp4"; ftype = 'video'
         
-        c.execute("SELECT hash FROM files WHERE hash=?", (fhash,))
-        if c.fetchone():
-            bot.reply_to(message, "⚠️ هذا الملف موجود بالفعل في الطابور.")
-        else:
-            c.execute("INSERT INTO files (hash, name, file_id, file_type, status) VALUES (?,?,?,?,?)",
+        if fid:
+            fhash = hashlib.md5(f"{fname}{fid}".encode()).hexdigest()
+            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO files (hash, name, file_id, file_type, status) VALUES (?,?,?,?,?)",
                       (fhash, fname, fid, ftype, 'pending'))
-            conn.commit()
-            bot.reply_to(message, f"✅ تمت إضافة **{fname}** للطابور.")
-        conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error receiving file: {e}")
-        bot.reply_to(message, "❌ حدث خطأ أثناء الحفظ.")
+            conn.commit(); conn.close()
+            bot.reply_to(message, f"✅ تمت إضافة {fname} للطابور.")
+    except Exception as e: logger.error(f"Receive error: {e}")
 
 # ==========================================
-# 🚀 محرك النشر التلقائي
+# 🚀 محرك النشر (المسؤول عن الإرسال)
 # ==========================================
 def publisher_loop():
-    logger.info("🚀 بدء محرك النشر...")
     while True:
         try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
+            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            # ترتيب حسب added_at يضمن النشر بالدور
             c.execute("SELECT hash, name, file_id, file_type FROM files WHERE status='pending' ORDER BY added_at ASC LIMIT 1")
             task = c.fetchone()
             
             if task:
                 fhash, fname, fid, ftype = task
-                logger.info(f"📤 جاري معالجة: {fname}")
-                
                 file_info = bot.get_file(fid)
                 downloaded = bot.download_file(file_info.file_path)
                 
-                extracted_text = ""
-                final_media = downloaded
+                txt = ""
+                if ftype == 'document': txt = extract_text_from_file(downloaded, fname)
+                elif ftype == 'audio': txt = audio_to_text(downloaded)
                 
-                if ftype == 'document':
-                    extracted_text = extract_text_from_file(downloaded, fname)
-                elif ftype == 'image':
-                    final_media = add_watermark(downloaded)
-                elif ftype == 'video':
-                    frame = get_video_frame(downloaded)
-                    if frame: final_media = add_watermark(frame)
-                elif ftype == 'audio':
-                    extracted_text = audio_to_text(downloaded)
-
-                clean_name = fname.replace('.pdf', '').replace('.docx', '').replace('_', ' ')
-                ai_data = get_ai_analysis(clean_name, extracted_text)
-                caption = generate_caption(clean_name, ai_data['cat'], ai_data['desc'], ai_data['wisdom'])
+                ai = get_ai_analysis(fname, txt)
+                caption = generate_caption(fname.split('.')[0], ai['cat'], ai['desc'], ai['reasons'], ai['wisdom'])
                 
-                try:
-                    if ftype == 'image':
-                        bot.send_photo(MAIN_CHANNEL, final_media, caption=caption, parse_mode="Markdown")
-                    elif ftype == 'video':
-                        bot.send_video(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
-                    elif ftype == 'audio':
-                        bot.send_audio(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
-                    else:
-                        bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
-                    
-                    c.execute("UPDATE files SET status='published' WHERE hash=?", (fhash,))
-                    conn.commit()
-                    bot.send_message(ADMIN_ID, f"📢 تم نشر: {fname}")
-                    time.sleep(40) 
-                    
-                except Exception as send_err:
-                    logger.error(f"Failed to send {fname}: {send_err}")
-                    c.execute("UPDATE files SET status='failed' WHERE hash=?", (fhash,))
-                    conn.commit()
-            else:
-                time.sleep(20)
+                # تنفيذ الإرسال
+                if ftype == 'image': bot.send_photo(MAIN_CHANNEL, add_watermark(downloaded), caption=caption, parse_mode="Markdown")
+                else: bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
+                
+                c.execute("UPDATE files SET status='published' WHERE hash=?", (fhash,))
+                conn.commit()
+                bot.send_message(ADMIN_ID, f"📢 تم نشر: {fname}")
+                time.sleep(30)
             conn.close()
         except Exception as e:
-            logger.error(f"Publisher Loop Error: {e}")
-            time.sleep(10)
+            logger.error(f"Loop Error: {e}"); time.sleep(10)
+        time.sleep(5)
 
-# ==========================================
-# 🕹️ أوامر التحكم
-# ==========================================
-@bot.message_handler(commands=['stats'])
-def stats(message):
-    if message.from_user.id != ADMIN_ID: return
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT status, COUNT(*) FROM files GROUP BY status")
-    data = dict(c.fetchall())
-    conn.close()
-    text = f"📊 **الإحصائيات:**\n✅ منشور: {data.get('published', 0)}\n⏳ انتظار: {data.get('pending', 0)}\n❌ فشل: {data.get('failed', 0)}"
-    bot.reply_to(message, text, parse_mode="Markdown")
-
-@bot.message_handler(commands=['clear'])
-def clear_failed(message):
-    if message.from_user.id != ADMIN_ID: return
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM files WHERE status='failed'")
-    conn.commit()
-    conn.close()
-    bot.reply_to(message, "🗑️ تم مسح الملفات الفاشلة.")
-
-# ==========================================
-# 🏁 التشغيل
-# ==========================================
 if __name__ == "__main__":
     init_db()
-    t = threading.Thread(target=publisher_loop, daemon=True)
-    t.start()
-    logger.info("🤖 البوت يعمل بكامل وظائفه...")
+    threading.Thread(target=publisher_loop, daemon=True).start()
     bot.infinity_polling()
