@@ -213,25 +213,29 @@ def publisher_loop():
     while True:
         try:
             conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-            # ترتيب حسب added_at يضمن النشر بالدور
             c.execute("SELECT hash, name, file_id, file_type FROM files WHERE status='pending' ORDER BY added_at ASC LIMIT 1")
             task = c.fetchone()
             
             if task:
                 fhash, fname, fid, ftype = task
-                file_info = bot.get_file(fid)
-                downloaded = bot.download_file(file_info.file_path)
+                caption = ""
                 
-                txt = ""
-                if ftype == 'document': txt = extract_text_from_file(downloaded, fname)
-                elif ftype == 'audio': txt = audio_to_text(downloaded)
-                
-                ai = get_ai_analysis(fname, txt)
-                caption = generate_caption(fname.split('.')[0], ai['cat'], ai['desc'], ai['reasons'], ai['wisdom'])
-                
-                # تنفيذ الإرسال
-                if ftype == 'image': bot.send_photo(MAIN_CHANNEL, add_watermark(downloaded), caption=caption, parse_mode="Markdown")
-                else: bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
+                # محاولة التحليل فقط للملفات الصغيرة (أقل من 20 ميجا) لضمان عدم الانهيار
+                try:
+                    file_info = bot.get_file(fid)
+                    if file_info.file_size < 20000000: # أقل من 20 ميجا
+                        downloaded = bot.download_file(file_info.file_path)
+                        txt = extract_text_from_file(downloaded, fname)
+                        ai = get_ai_analysis(fname, txt)
+                        caption = generate_caption(fname.split('.')[0], ai['cat'], ai['desc'], ai['reasons'], ai['wisdom'])
+                    else:
+                        # إذا كان الملف كبيراً، نرسله بوصف افتراضي لتجنب الخطأ
+                        caption = f"📚 **{fname.split('.')[0]}**\n\nملف كبير الحجم تم رفعه للمكتبة.\n\n💎 {LIB_LINK}"
+                except:
+                    caption = f"📚 **{fname.split('.')[0]}**\n\nجاري المعالجة...\n\n💎 {LIB_LINK}"
+
+                # تنفيذ الإرسال للقناة
+                bot.send_document(MAIN_CHANNEL, fid, caption=caption, parse_mode="Markdown")
                 
                 c.execute("UPDATE files SET status='published' WHERE hash=?", (fhash,))
                 conn.commit()
@@ -239,8 +243,14 @@ def publisher_loop():
                 time.sleep(30)
             conn.close()
         except Exception as e:
-            logger.error(f"Loop Error: {e}"); time.sleep(10)
+            logger.error(f"Loop Error: {e}")
+            # إذا فشل بسبب الحجم، نقوم بتحديث حالته لكي لا يحاول البوت معه للأبد
+            if "file is too big" in str(e).lower():
+                c.execute("UPDATE files SET status='failed_size' WHERE hash=?", (fhash,))
+                conn.commit()
+            time.sleep(10)
         time.sleep(5)
+
 
 if __name__ == "__main__":
     init_db()
