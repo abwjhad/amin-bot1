@@ -28,7 +28,7 @@ from pydub import AudioSegment
 TOKEN = "6396872015:AAHQCVV0NKKAUx0jw4Un3e6YcuUGU19jd1M"
 GEMINI_KEY = "AIzaSyABXhnU1tRmhuuL9FyRAtY-qGRdtQr-xiE"
 ADMIN_ID = 5509592307
-MAIN_CHANNEL = "@Yemen_International_Library"
+MAIN_CHANNEL = "-1003254290305"
 LIB_LINK = "https://t.me/Yemen_International_Library"
 WATERMARK_TEXT = "مكتبة المليار\n@Yemen_International_Library"
 
