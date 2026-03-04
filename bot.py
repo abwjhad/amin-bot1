@@ -42,44 +42,36 @@ STYLES = [
 # 🧠 منطق الذكاء الاصطناعي (البحث والدمج السريع)
 # ==========================================
 def get_fast_ai_analysis(book_identifier):
-    """يطلب من Gemini البحث عن الكتاب وإعطاء وصف جذاب مدمج"""
+    """يطلب من Gemini البحث عن الكتاب وإعطاء وصف تشويقي وأدبي عميق"""
     prompt = f"""
-    ابحث في معلوماتك عن كتاب بعنوان أو محتوى: '{book_identifier}'.
-    أريد وصفاً جذاباً جداً للمكتبة العربية.
-    أعطني النتيجة JSON فقط:
+    أنت ناقد أدبي ومسوق كتب محترف. حلل الكتاب: '{book_identifier}'.
+    أريد إنتاج وصف مشابه لهذا النمط:
+    - نبذة: جملة واحدة قوية تلخص جوهر الكتاب.
+    - لماذا يستحق القراءة؟: (أريد 3 نقاط إبداعية، كل نقطة تبدأ بـ 'عنوان جذاب' ثم شرح قصير ومبهر).
+    - حكمة: اقتباس عميق ومؤثر من الكتاب أو يعبر عن روحه.
+
+    النتيجة JSON فقط باللغة العربية:
     {{
-        "name": "الاسم الحقيقي الصحيح للكتاب",
+        "name": "الاسم الحقيقي للكتاب",
         "cat": "تصنيف دقيق",
-        "desc": "وصف مشوق مدمج من مراجعك",
-        "reasons": "3 أسباب قوية للقراءة (نقاط)",
-        "wisdom": "حكمة أو اقتباس مرتبط بالكتاب"
+        "desc": "جملة تلخص عبقرية الكتاب",
+        "reasons": "🔍 **عنوان إبداعي**: شرح تشويقي\\n⚡ **عنوان إبداعي**: شرح تشويقي\\n✨ **عنوان إبداعي**: شرح تشويقي",
+        "wisdom": "نص الحكمة أو الاقتباس هنا"
     }}
     """
     try:
-        response = ai_model.generate_content(prompt)
-        data = json.loads(response.text.replace('```json', '').replace('```', '').strip())
-        return data
-    except:
+        # إضافة إعدادات السلامة والإبداع (Temperature) لضمان جودة أدبية
+        generation_config = {
+            "temperature": 0.8, # لزيادة الإبداع في الوصف
+            "top_p": 0.95,
+        }
+        response = ai_model.generate_content(prompt, generation_config=generation_config)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(text)
+    except Exception as e:
+        logger.error(f"AI Error: {e}")
         return None
 
-def is_name_unclear(name):
-    """يفحص إذا كان اسم الملف غير مفهوم (أرقام أو رموز)"""
-    clean_name = name.split('.')[0]
-    # إذا كان الاسم أرقام فقط أو قصير جداً
-    if clean_name.isdigit() or len(clean_name) < 5:
-        return True
-    return False
-
-def get_title_from_first_page(file_content):
-    """يفتح أول صفحة فقط لاستخراج العنوان بسرعة"""
-    try:
-        doc = fitz.open(stream=file_content, filetype="pdf")
-        if len(doc) > 0:
-            text = doc[0].get_text() # قراءة أول صفحة فقط
-            doc.close()
-            return text[:500] # أول 500 حرف تكفي للعنوان
-    except: pass
-    return ""
 
 # ==========================================
 # 🚀 محرك النشر الذكي والسريع
